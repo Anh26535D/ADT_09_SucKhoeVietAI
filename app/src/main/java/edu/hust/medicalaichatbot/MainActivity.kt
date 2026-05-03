@@ -22,7 +22,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -31,16 +30,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.paging.compose.collectAsLazyPagingItems
-import edu.hust.medicalaichatbot.data.local.AppDatabase
-import edu.hust.medicalaichatbot.data.repository.AuthRepository
-import edu.hust.medicalaichatbot.data.repository.ChatRepositoryImpl
-import edu.hust.medicalaichatbot.data.repository.ProfileRepository
-import edu.hust.medicalaichatbot.data.service.LocationService
-import edu.hust.medicalaichatbot.domain.usecase.chat.CreateThreadUseCase
-import edu.hust.medicalaichatbot.domain.usecase.chat.DeleteThreadUseCase
-import edu.hust.medicalaichatbot.domain.usecase.chat.GetMessagesUseCase
-import edu.hust.medicalaichatbot.domain.usecase.chat.GetThreadsUseCase
-import edu.hust.medicalaichatbot.domain.usecase.chat.SendMessageUseCase
 import edu.hust.medicalaichatbot.ui.components.CommonTopBar
 import edu.hust.medicalaichatbot.ui.components.MainBottomNavigation
 import edu.hust.medicalaichatbot.ui.components.MessageInput
@@ -60,7 +49,6 @@ import edu.hust.medicalaichatbot.ui.viewmodel.AuthViewModel
 import edu.hust.medicalaichatbot.ui.viewmodel.ChatViewModel
 import edu.hust.medicalaichatbot.ui.viewmodel.HistoryViewModel
 import edu.hust.medicalaichatbot.ui.viewmodel.ProfileViewModel
-import edu.hust.medicalaichatbot.utils.Constants
 import edu.hust.medicalaichatbot.utils.PreferenceManager
 
 class MainActivity : ComponentActivity() {
@@ -69,40 +57,33 @@ class MainActivity : ComponentActivity() {
         val preferenceManager = PreferenceManager(this)
         preferenceManager.updateLastVisit()
         
+        val container = (application as MedicalAIChatbotApplication).appRepositoryContainer
+
         enableEdgeToEdge()
         setContent {
             MedicalAIChatbotTheme {
-                val context = LocalContext.current
-                val database = AppDatabase.getDatabase(context)
-                
-                val authRepository = AuthRepository(database.userDao(), database.chatDao())
                 val authViewModel: AuthViewModel = viewModel(
-                    factory = AuthViewModel.Factory(authRepository)
+                    factory = AuthViewModel.Factory(container.authRepository)
                 )
 
-                val locationService = LocationService(context)
-                val chatRepository = ChatRepositoryImpl(
-                    chatDao = database.chatDao(),
-                    modelName = Constants.DEFAULT_MODEL,
-                    locationService = locationService
-                )
-                val getMessagesUseCase = GetMessagesUseCase(chatRepository)
-                val sendMessageUseCase = SendMessageUseCase(chatRepository)
-                val createThreadUseCase = CreateThreadUseCase(chatRepository)
-                
                 val chatViewModel: ChatViewModel = viewModel(
-                    factory = ChatViewModel.Factory(getMessagesUseCase, sendMessageUseCase, createThreadUseCase)
+                    factory = ChatViewModel.Factory(
+                        container.getMessagesUseCase,
+                        container.sendMessageUseCase,
+                        container.createThreadUseCase
+                    )
                 )
 
-                val getThreadsUseCase = GetThreadsUseCase(chatRepository)
-                val deleteThreadUseCase = DeleteThreadUseCase(chatRepository)
                 val historyViewModel: HistoryViewModel = viewModel(
-                    factory = HistoryViewModel.Factory(getThreadsUseCase, deleteThreadUseCase, getMessagesUseCase)
+                    factory = HistoryViewModel.Factory(
+                        container.getThreadsUseCase,
+                        container.deleteThreadUseCase,
+                        container.getMessagesUseCase
+                    )
                 )
 
-                val profileRepository = ProfileRepository(database.userProfileDao())
                 val profileViewModel: ProfileViewModel = viewModel(
-                    factory = ProfileViewModel.Factory(profileRepository, authViewModel)
+                    factory = ProfileViewModel.Factory(container.profileRepository, authViewModel)
                 )
 
                 MedicalApp(authViewModel, chatViewModel, historyViewModel, profileViewModel, preferenceManager)

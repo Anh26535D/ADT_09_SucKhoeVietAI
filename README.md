@@ -90,3 +90,10 @@ To get the AI features working, you need to connect the app to your own Firebase
 5. **Check API Keys**: Ensure that your API keys have permissions to access the Gemini AI services in the Google Cloud Console.
 
 For detailed instructions, refer to the [official Firebase documentation for Gemini](https://firebase.google.com/docs/gemini).
+
+## 🔗 Secure IoT Device Pairing (RFC 8628)
+
+The application includes a secure device flow confirmation feature to pair hardware wearables (like the ESP32-S3 band) securely:
+- **BLE Provisioning:** Transmits WiFi SSID & password to the device locally using AES-128-CTR and ECDH key exchange.
+- **RFC 8628 Confirmation:** Automatically pulls `user_code` from Firebase RTDB and validates the device pairing request by generating a cryptographic HMAC-SHA256 signature using the PIN PoP (`"12345678"`) key, then confirms with Backend Go.
+- **Realtime Dashboard:** Receives real-time telemetry updates pushed from Go Backend through Firebase RTDB.

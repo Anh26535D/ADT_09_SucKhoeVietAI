@@ -27,13 +27,21 @@ class BleIoTService(private val context: Context) {
     
     private var currentEspDevice: ESPDevice? = null
     private var scanCallback: ScanCallback? = null
-    private var isScanning = false
+    
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning = _isScanning.asStateFlow()
+
+    private val _scannedDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
+    val scannedDevices = _scannedDevices.asStateFlow()
 
     private val _connectionState = MutableStateFlow(BluetoothProfile.STATE_DISCONNECTED)
     val connectionState = _connectionState.asStateFlow()
 
     private val _discoveredAddress = MutableStateFlow<String?>(null)
     val discoveredAddress = _discoveredAddress.asStateFlow()
+
+    private val _connectedDeviceName = MutableStateFlow<String?>(null)
+    val connectedDeviceName = _connectedDeviceName.asStateFlow()
 
     private val _provisioningStatus = MutableStateFlow<String?>(null)
     val provisioningStatus = _provisioningStatus.asStateFlow()
@@ -58,7 +66,7 @@ class BleIoTService(private val context: Context) {
             return
         }
 
-        if (isScanning) {
+        if (_isScanning.value) {
             Log.w(TAG, "Already scanning, ignoring request")
             return
         }
@@ -73,54 +81,36 @@ class BleIoTService(private val context: Context) {
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
+        _scannedDevices.value = emptyList()
+
         scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val deviceName = result.device.name
                 Log.d(TAG, "Scanned device: $deviceName [${result.device.address}]")
                 
                 if (deviceName != null && deviceName.startsWith(DEVICE_PREFIX)) {
-                    val serviceUuid = result.scanRecord?.serviceUuids?.firstOrNull()?.toString()
-                    Log.i(TAG, "Found IoT device: $deviceName, UUID: $serviceUuid")
-                    
-                    // 1. Get BLE MAC and derive WiFi MAC (ESP32: BLE MAC = WiFi MAC + 2)
-                    val bleMac = result.device.address.replace(":", "").uppercase()
-                    val derivedWifiMac = try {
-                        val bleLong = bleMac.toLong(16)
-                        String.format("%012X", bleLong - 2)
-                    } catch (e: Exception) {
-                        bleMac
+                    val currentList = _scannedDevices.value.toMutableList()
+                    if (currentList.none { it.address == result.device.address }) {
+                        Log.i(TAG, "Found matching IoT device: $deviceName")
+                        currentList.add(result.device)
+                        _scannedDevices.value = currentList
                     }
-
-                    // 2. Extract MAC from device name if present
-                    val rawNameMac = deviceName.substring(DEVICE_PREFIX.length).uppercase().replace(":", "")
-                    
-                    // 3. Use name MAC if it's a full 12-char hex, otherwise use derived WiFi MAC
-                    val macAddress = if (rawNameMac.length == 12 && rawNameMac.matches(Regex("^[0-9A-F]+$"))) {
-                        rawNameMac
-                    } else {
-                        derivedWifiMac
-                    }
-
-                    _discoveredAddress.value = macAddress
-                    
-                    stopScanning()
-                    initiateStandardProvisioning(result.device, serviceUuid)
                 }
             }
             
             override fun onScanFailed(errorCode: Int) {
                 Log.e(TAG, "Scan failed with error: $errorCode")
-                isScanning = false
+                _isScanning.value = false
             }
         }
         
         Log.i(TAG, "Starting scan for IoT device...")
-        isScanning = true
+        _isScanning.value = true
         scanner.startScan(null, settings, scanCallback)
         
         scope.launch {
             delay(30000) // 30s timeout
-            if (isScanning) {
+            if (_isScanning.value) {
                 Log.i(TAG, "Scan timeout reached")
                 stopScanning()
             }
@@ -128,7 +118,7 @@ class BleIoTService(private val context: Context) {
     }
 
     fun stopScanning() {
-        if (!isScanning) return
+        if (!_isScanning.value) return
         
         try {
             adapter?.bluetoothLeScanner?.stopScan(scanCallback)
@@ -136,7 +126,7 @@ class BleIoTService(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping scan: ${e.message}")
         } finally {
-            isScanning = false
+            _isScanning.value = false
             scanCallback = null
         }
     }
@@ -225,25 +215,58 @@ class BleIoTService(private val context: Context) {
 
             override fun wifiConfigFailed(e: Exception) {
                 Log.e(TAG, "WiFi config failed: ${e.message}")
+                _provisioningStatus.value = "FAILED"
             }
 
             override fun wifiConfigApplyFailed(e: Exception) {
                 Log.e(TAG, "WiFi config apply failed: ${e.message}")
+                _provisioningStatus.value = "FAILED"
             }
 
             override fun provisioningFailedFromDevice(failureReason: ESPConstants.ProvisionFailureReason) {
                 Log.e(TAG, "Provisioning failed from device: $failureReason")
+                _provisioningStatus.value = "FAILED"
             }
 
             override fun createSessionFailed(e: Exception) {
                 Log.e(TAG, "Secure session creation failed: ${e.message}")
+                _provisioningStatus.value = "FAILED"
             }
         })
+    }
+
+    fun connectToDevice(device: BluetoothDevice) {
+        stopScanning()
+        
+        // 1. Get BLE MAC and derive WiFi MAC (ESP32: BLE MAC = WiFi MAC + 2)
+        val bleMac = device.address.replace(":", "").uppercase()
+        val derivedWifiMac = try {
+            val bleLong = bleMac.toLong(16)
+            String.format("%012X", bleLong - 2)
+        } catch (e: Exception) {
+            bleMac
+        }
+
+        // 2. Extract MAC from device name if present
+        val deviceName = device.name ?: ""
+        val rawNameMac = deviceName.substring(DEVICE_PREFIX.length).uppercase().replace(":", "")
+        
+        // 3. Use name MAC if it's a full 12-char hex, otherwise use derived WiFi MAC
+        val macAddress = if (rawNameMac.length == 12 && rawNameMac.matches(Regex("^[0-9A-F]+$"))) {
+            rawNameMac
+        } else {
+            derivedWifiMac
+        }
+
+        _discoveredAddress.value = macAddress
+        _connectedDeviceName.value = device.name
+        initiateStandardProvisioning(device, null)
     }
 
     fun disconnect() {
         currentEspDevice?.disconnectDevice()
         currentEspDevice = null
+        _connectedDeviceName.value = null
         _connectionState.value = BluetoothProfile.STATE_DISCONNECTED
         
         if (EventBus.getDefault().isRegistered(this)) {

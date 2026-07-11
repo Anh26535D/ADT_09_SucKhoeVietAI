@@ -1,6 +1,7 @@
 package edu.hust.medicalaichatbot.ui.viewmodel
 
 import android.app.Application
+import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -22,13 +23,15 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
 
     val bleConnectionState = bleService.connectionState
     val connectedDeviceAddress = bleService.discoveredAddress
+    val connectedDeviceName = bleService.connectedDeviceName
     val provisioningStatus = bleService.provisioningStatus
+    val scannedDevices = bleService.scannedDevices
+    val isScanning = bleService.isScanning
 
     private val database = FirebaseDatabase.getInstance("https://caromaster-default-rtdb.asia-southeast1.firebasedatabase.app")
     private val prefs = application.getSharedPreferences("iot_prefs", Context.MODE_PRIVATE)
 
-    // NEW: Expose the active ID to the UI
-    private val _currentDeviceId = MutableStateFlow(prefs.getString("last_device_id", "1020BA49D1C8") ?: "1020BA49D1C8")
+    private val _currentDeviceId = MutableStateFlow(prefs.getString("last_device_id", "") ?: "")
     val currentDeviceId: StateFlow<String> = _currentDeviceId.asStateFlow()
 
     private var activeDeviceRef: DatabaseReference? = null
@@ -135,6 +138,16 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
         pollingQuery?.removeEventListener(pollingListener)
 
         val deviceId = _currentDeviceId.value
+        if (deviceId.isEmpty()) {
+            Log.i(TAG, "No device paired. Clearing data and skipping Firebase sync.")
+            _firebaseData.value = IoTData()
+            _historyData.value = emptyList()
+            activeDeviceRef = null
+            activeHistoryQuery = null
+            pollingQuery = null
+            return
+        }
+
         val newDeviceRef = database.getReference("devices/$deviceId/latest")
         val newHistoryQuery = database.getReference("devices/$deviceId/history").limitToLast(50)
 
@@ -175,6 +188,11 @@ class IoTViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         bleService.startScanning()
+    }
+
+    fun connectToDevice(device: BluetoothDevice) {
+        if (isGuest) return
+        bleService.connectToDevice(device)
     }
 
     fun disconnectBle() = bleService.disconnect()

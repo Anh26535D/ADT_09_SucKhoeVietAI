@@ -233,10 +233,19 @@ fun IoTMonitoringSection(
     val discoveredUserCode by viewModel.discoveredUserCode.collectAsState()
     val activeSessionId by viewModel.activeSessionId.collectAsState()
     val confirmStatus by viewModel.confirmStatus.collectAsState()
+    val isScanning by viewModel.isScanning.collectAsState()
+    val scannedDevices by viewModel.scannedDevices.collectAsState()
+    val connectedDeviceName by viewModel.connectedDeviceName.collectAsState()
     
     var wifiSsid by remember(suggestedSsid) { mutableStateOf(suggestedSsid) }
     var wifiPass by remember { mutableStateOf("") }
     var showWifiConfig by remember { mutableStateOf(false) }
+
+    LaunchedEffect(connectionState) {
+        if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
+            showWifiConfig = true
+        }
+    }
 
     Column {
         // Pairing Confirmation Card (RFC 8628 Flow)
@@ -317,7 +326,13 @@ fun IoTMonitoringSection(
         ) {
             Column {
                 Text(
-                    text = "THIẾT BỊ ĐEO ($currentDeviceId)",
+                    text = if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED && !connectedDeviceName.isNullOrEmpty()) {
+                        "THIẾT BỊ ĐEO ($connectedDeviceName)"
+                    } else if (currentDeviceId.isNotEmpty()) {
+                        "THIẾT BỊ ĐEO (Đã ghép đôi)"
+                    } else {
+                        "THIẾT BỊ ĐEO (Chưa ghép đôi)"
+                    },
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextGray
@@ -326,7 +341,7 @@ fun IoTMonitoringSection(
                     text = when(connectionState) {
                         android.bluetooth.BluetoothProfile.STATE_CONNECTED -> "Đã kết nối BLE"
                         android.bluetooth.BluetoothProfile.STATE_CONNECTING -> "Đang kết nối..."
-                        else -> if (currentDeviceId != "1020BA49D1C8" || deviceAddress != null) "Đã nhận diện (Cloud)" else "Dữ liệu mặc định (Cloud)"
+                        else -> if (currentDeviceId.isNotEmpty() || deviceAddress != null) "Đã nhận diện (Cloud)" else "Chưa ghép đôi thiết bị"
                     },
                     fontSize = 10.sp,
                     color = if (connectionState == android.bluetooth.BluetoothProfile.STATE_CONNECTED) SuccessGreen else TextGray
@@ -359,9 +374,84 @@ fun IoTMonitoringSection(
                         tint = PrimaryBlue,
                         modifier = Modifier.size(16.dp).clickable { viewModel.disconnectBle() }
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IoTStatusBadge(status = data.status, hasFinger = data.hasFinger)
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                IoTStatusBadge(status = data.status, hasFinger = data.hasFinger)
+            }
+        }
+
+        if (connectionState == android.bluetooth.BluetoothProfile.STATE_DISCONNECTED && (isScanning || scannedDevices.isNotEmpty())) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White,
+                shadowElevation = 4.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryBlue.copy(alpha = 0.2f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Thiết bị tìm thấy",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color.Black
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(modifier = Modifier.heightIn(max = 200.dp)) {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            if (isScanning && scannedDevices.isEmpty()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = PrimaryBlue
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Đang tìm kiếm thiết bị...",
+                                        fontSize = 12.sp,
+                                        color = TextGray
+                                    )
+                                }
+                            } else {
+                                scannedDevices.forEach { device ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { viewModel.connectToDevice(device) }
+                                            .padding(vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = device.name ?: "Thiết bị không tên",
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 13.sp,
+                                                color = Color.Black
+                                            )
+                                            Text(
+                                                text = device.address,
+                                                fontSize = 11.sp,
+                                                color = TextGray
+                                            )
+                                        }
+                                        Icon(
+                                            Icons.Default.Bluetooth,
+                                            contentDescription = "Kết nối",
+                                            tint = PrimaryBlue,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    HorizontalDivider(color = SurfaceGray.copy(alpha = 0.5f))
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         

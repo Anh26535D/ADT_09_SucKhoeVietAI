@@ -55,6 +55,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import edu.hust.medicalaichatbot.data.local.entity.User
 import edu.hust.medicalaichatbot.ui.theme.PrimaryBlue
 import edu.hust.medicalaichatbot.ui.theme.TextGray
@@ -69,6 +73,7 @@ fun RegisterScreen(
     onRegisterSuccess: () -> Unit,
     onLoginClick: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     var fullName by remember { mutableStateOf("") }
     var phoneNumber by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -189,6 +194,12 @@ fun RegisterScreen(
                         focusedBorderColor = PrimaryBlue,
                         unfocusedBorderColor = Color.Transparent,
                     ),
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                    ),
                     singleLine = true
                 )
 
@@ -215,7 +226,13 @@ fun RegisterScreen(
                         focusedBorderColor = PrimaryBlue,
                         unfocusedBorderColor = Color.Transparent,
                     ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Phone,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                    ),
                     singleLine = true
                 )
 
@@ -243,7 +260,18 @@ fun RegisterScreen(
                         unfocusedBorderColor = Color.Transparent,
                     ),
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (agreeToTerms && fullName.isNotBlank() && phoneNumber.isNotBlank() && password.isNotBlank() && authState !is AuthState.Loading) {
+                                focusManager.clearFocus()
+                                viewModel.register(User(name = fullName, phoneNumber = phoneNumber, password = password))
+                            }
+                        }
+                    ),
                     singleLine = true
                 )
 
@@ -298,41 +326,7 @@ fun RegisterScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Social Login Divider
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HorizontalDivider(modifier = Modifier.weight(1f), color = Color(0xFFE9ECEF))
-                    Text(
-                        text = "Hoặc đăng ký bằng",
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        fontSize = 12.sp,
-                        color = TextGray
-                    )
-                    HorizontalDivider(modifier = Modifier.weight(1f), color = Color(0xFFE9ECEF))
-                }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Social Buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    SocialButton(
-                        text = "Google",
-                        icon = android.R.drawable.ic_menu_gallery,
-                        modifier = Modifier.weight(1f),
-                        onClick = {}
-                    )
-                    SocialButton(
-                        text = "Apple",
-                        icon = android.R.drawable.ic_menu_gallery,
-                        modifier = Modifier.weight(1f),
-                        onClick = {}
-                    )
-                }
             }
         }
 
